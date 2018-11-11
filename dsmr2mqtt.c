@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <mosquitto.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,37 +11,35 @@
 #define VERSION "0.1"
 #define GIT_VERSION "n/a"
 
+#define DSMR_EQUIPMENT_ID  "test/dsmr/reading/id"
+#define DSMR_TIMESTAMP     "test/dsmr/reading/timestamp"
+#define DSMR_E_IN_TARIFF1  "test/dsmr/reading/electricity_delivered_1"
+#define DSMR_E_OUT_TARIFF1 "test/dsmr/reading/electricity_returned_1"
+#define DSMR_E_IN_TARIFF2  "test/dsmr/reading/electricity_delivered_2"
+#define DSMR_E_OUT_TARIFF2 "test/dsmr/reading/electricity_returned_2"
+#define DSMR_P_IN_TOTAL    "test/dsmr/reading/electricity_currently_delivered"
+#define DSMR_P_OUT_TOTAL   "test/dsmr/reading/electricity_currently_returned"
+#define DSMR_P_IN_L1       "test/dsmr/reading/phase_currently_delivered_l1"
+#define DSMR_P_IN_L2       "test/dsmr/reading/phase_currently_delivered_l2"
+#define DSMR_P_IN_L3       "test/dsmr/reading/phase_currently_delivered_l3"
+#define DSMR_P_OUT_L1      "test/dsmr/reading/phase_currently_returned_l1"
+#define DSMR_P_OUT_L2      "test/dsmr/reading/phase_currently_returned_l2"
+#define DSMR_P_OUT_L3      "test/dsmr/reading/phase_currently_returned_l3"
 
+#define DSMR_DEV_COUNTER_TIMESTAMP "test/dsmr/reading/extra_device_timestamp"
+#define DSMR_DEV_COUNTER   "test/dsmr/reading/extra_device_delivered"
+#define DSMR_DEV_COUNTER_RATE "test/dsmr/reading/extra_device_delivered_rate"
 
-#define DSMR_EQUIPMENT_ID  "dsmr/reading/id"
-#define DSMR_TIMESTAMP     "dsmr/reading/timestamp"
-#define DSMR_E_IN_TARIFF1  "dsmr/reading/electricity_delivered_1"
-#define DSMR_E_OUT_TARIFF1 "dsmr/reading/electricity_returned_1"
-#define DSMR_E_IN_TARIFF2  "dsmr/reading/electricity_delivered_2"
-#define DSMR_E_OUT_TARIFF2 "dsmr/reading/electricity_returned_2"
-#define DSMR_P_IN_TOTAL    "dsmr/reading/electricity_currently_delivered"
-#define DSMR_P_OUT_TOTAL   "dsmr/reading/electricity_currently_returned"
-#define DSMR_P_IN_L1       "dsmr/reading/phase_currently_delivered_l1"
-#define DSMR_P_IN_L2       "dsmr/reading/phase_currently_delivered_l2"
-#define DSMR_P_IN_L3       "dsmr/reading/phase_currently_delivered_l3"
-#define DSMR_P_OUT_L1      "dsmr/reading/phase_currently_returned_l1"
-#define DSMR_P_OUT_L2      "dsmr/reading/phase_currently_returned_l2"
-#define DSMR_P_OUT_L3      "dsmr/reading/phase_currently_returned_l3"
-
-#define DSMR_DEV_COUNTER_TIMESTAMP "dsmr/reading/extra_device_timestamp"
-#define DSMR_DEV_COUNTER   "dsmr/reading/extra_device_delivered"
-#define DSMR_DEV_COUNTER_RATE "dsmr/reading/extra_device_delivered_rate"
-
-#define DSMR_P1_VERSION    "dsmr/meter-stats/dsmr_version"
-#define DSMR_TARIFF        "dsmr/meter-stats/electricity_tariff"
-#define DSMR_POWER_FAILURES "dsmr/meter-stats/power_failure_count"
-#define DSMR_POWER_FAILURES_LONG "dsmr/meter-stats/long_power_failure_count"
-#define DSMR_V_SAGS_L1     "dsmr/meter-stats/voltage_sag_count_l1"
-#define DSMR_V_SAGS_L2     "dsmr/meter-stats/voltage_sag_count_l2"
-#define DSMR_V_SAGS_L3     "dsmr/meter-stats/voltage_sag_count_l3"
-#define DSMR_V_SWELLS_L1   "dsmr/meter-stats/voltage_swell_count_l1"
-#define DSMR_V_SWELLS_L2   "dsmr/meter-stats/voltage_swell_count_l2"
-#define DSMR_V_SWELLS_L3   "dsmr/meter-stats/voltage_swell_count_l3"
+#define DSMR_P1_VERSION    "test/dsmr/meter-stats/dsmr_version"
+#define DSMR_TARIFF        "test/dsmr/meter-stats/electricity_tariff"
+#define DSMR_POWER_FAILURES "test/dsmr/meter-stats/power_failure_count"
+#define DSMR_POWER_FAILURES_LONG "test/dsmr/meter-stats/long_power_failure_count"
+#define DSMR_V_SAGS_L1     "test/dsmr/meter-stats/voltage_sag_count_l1"
+#define DSMR_V_SAGS_L2     "test/dsmr/meter-stats/voltage_sag_count_l2"
+#define DSMR_V_SAGS_L3     "test/dsmr/meter-stats/voltage_sag_count_l3"
+#define DSMR_V_SWELLS_L1   "test/dsmr/meter-stats/voltage_swell_count_l1"
+#define DSMR_V_SWELLS_L2   "test/dsmr/meter-stats/voltage_swell_count_l2"
+#define DSMR_V_SWELLS_L3   "test/dsmr/meter-stats/voltage_swell_count_l3"
 
 
 /* config struct */
@@ -57,6 +56,12 @@ struct mosquitto *mosq = NULL;
 /* Global counter for last gas meter value */
 double   last_gas_count = 0;
 uint32_t last_gas_timestamp = 0;
+
+bool volatile keepRunning = true;
+
+void intHandler(int dummy) {
+    keepRunning = 0;
+}
 
 /* Help and arguments */
 void show_help() {
@@ -212,10 +217,14 @@ int send_values(struct dsmr_data_struct *data) {
     last_gas_count     = data->dev_counter[0];
     last_gas_timestamp = data->dev_counter_timestamp[0];
   }
+  
+  free(msg);
   return 0;
 }
 
 int main(int argc, char **argv) {
+  signal(SIGINT, intHandler);
+  
   init_msglogger();
   // logger.loglevel = LL_VERBOSE;
 
@@ -249,8 +258,9 @@ int main(int argc, char **argv) {
     // err = mosquitto_loop(mosq, -1, 1);
     // fprintf(stderr, "MQTT loop return %i\n", err);
 
-  } while (parser.terminal); // If we're connected to a serial device, keep
-                             // reading, otherwise exit
+  } while (parser.terminal && keepRunning); // If we're connected to a 
+                                            // serial device, keep 
+                                            // reading, otherwise exit
 
   telegram_parser_close(&parser);
 
