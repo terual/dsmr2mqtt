@@ -13,13 +13,18 @@ If you want to use other definitions, you can change the the #defines at the beg
 
 ### Debian/Ubuntu
 
-Get the source code, install libmosquitto-dev and use the command make to build the dsmr2mqtt executable:
+For make sure you have git installed and the neccesary library.
 ```
-sudo apt install libmosquitto-dev
-cd [whatever build dir]
-git clone https://github.com/terual/dsmr2mqtt
-cd dsmr2mqtt
-make
+# apt install git libmosquitto-dev
+```
+
+Then get the source code and use the command make to build the dsmr2mqtt executable:
+```
+$ cd [whatever build dir]
+$ git clone https://github.com/terual/dsmr2mqtt
+$ cd dsmr2mqtt
+$ make
+$ ./dsmr2mqtt
 ```
 
 ### Cross-compiling for OpenWRT
