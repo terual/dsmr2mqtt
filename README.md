@@ -13,7 +13,7 @@ If you want to use other definitions, you can change the the #defines at the beg
 
 ### Debian/Ubuntu
 
-For make sure you have git installed and the neccesary library.
+First make sure you have git installed and the necessary library.
 ```
 # apt install git libmosquitto-dev
 ```
