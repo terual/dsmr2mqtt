@@ -1,0 +1,35 @@
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=dsmr2mqtt
+PKG_VERSION:=0.1
+PKG_RELEASE:=1
+
+PKG_BUILD_DIR:=$(BUILD_DIR)/dsmr2mqtt-$(PKG_VERSION)
+PKG_SOURCE_PROTO:=git
+PKG_SOURCE_URL:=https://github.com/terual/dsmr2mqtt.git
+PKG_SOURCE_VERSION:=79f5ad74ad2af9f1da58fb87cab5bf725afb08c8
+PKG_SOURCE_DATE:=2018-11-11
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/dsmr2mqtt
+  SECTION:=utils
+  CATEGORY:=Utilities
+  TITLE:=DSMR to MQTT utility
+  DEPENDS:=+libmosquitto
+endef
+
+define Package/dsmr2mqtt/description
+ DSMR to MQTT utility
+ Connect a DSMR smart meter to the USB of your
+ OpenWRT device and to a MQTT broker to pass 
+ on all the telegrams.
+endef
+
+
+define Package/dsmr2mqtt/install
+	$(INSTALL_DIR) $(1)/usr/sbin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/dsmr2mqtt $(1)/usr/sbin/
+endef
+
+$(eval $(call BuildPackage,dsmr2mqtt))
