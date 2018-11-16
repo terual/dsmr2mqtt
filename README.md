@@ -16,8 +16,9 @@ place the Makefile.openwrt in a seperate dsmr2mqtt package folder, and rename it
 
 ## Using the tool
 
+```
 Usage:  dsmr2mqtt [-d <serial_device>] [-m <mqtt_broker_host>] [-p <mqtt_broker_port>]
     -d <serial_device>      Serial device for DSMR device (default is /dev/ttyUSB0)
     -m <mqtt_broker_host>   Host name for MQTT broker (default is localhost)
     -p <mqtt_broker_port>   Host name for MQTT broker port (default is 1883)
-
+```
