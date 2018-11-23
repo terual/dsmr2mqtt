@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "dsmr-p1-parser/logmsg.h"
 #include "dsmr-p1-parser/p1-lib.h"
@@ -13,6 +14,8 @@
 
 #define DSMR_EQUIPMENT_ID  "dsmr/reading/id"
 #define DSMR_TIMESTAMP     "dsmr/reading/timestamp"
+#define DSMR_E_IN_TODAY    "dsmr/reading/electricity_delivered_today"
+#define DSMR_E_OUT_TODAY   "dsmr/reading/electricity_returned_today"
 #define DSMR_E_IN_TARIFF1  "dsmr/reading/electricity_delivered_1"
 #define DSMR_E_OUT_TARIFF1 "dsmr/reading/electricity_returned_1"
 #define DSMR_E_IN_TARIFF2  "dsmr/reading/electricity_delivered_2"
@@ -55,7 +58,12 @@ struct mosquitto *mosq = NULL;
 
 /* Global counter for last gas meter value */
 double   last_gas_count = 0;
-uint32_t last_gas_timestamp = 0;
+time_t   last_gas_timestamp = 0;
+
+/* Global counter for daily values */
+time_t   last_timestamp = 0;
+double   e_in_midnight = 0;
+double   e_out_midnight = 0;
 
 bool volatile keepRunning = true;
 
@@ -122,7 +130,7 @@ void mosq_log_callback(struct mosquitto *mosq, void *userdata, int level,
 void mosq_publish_callback(struct mosquitto *mosq, void *userdata, int level) {}
 
 /* Setup MQTT connection to broker */
-void mqtt_setup(char *host, int port) {
+int mqtt_setup(char *host, int port) {
 
   int keepalive = 60;
   bool clean_session = true;
@@ -131,7 +139,7 @@ void mqtt_setup(char *host, int port) {
   mosq = mosquitto_new(NULL, clean_session, NULL);
   if (!mosq) {
     fprintf(stderr, "Error: Out of memory.\n");
-    exit(1);
+    return -1;
   }
 
   mosquitto_log_callback_set(mosq, mosq_log_callback);
@@ -139,16 +147,17 @@ void mqtt_setup(char *host, int port) {
 
   if (mosquitto_connect(mosq, host, port, keepalive)) {
     fprintf(stderr, "Unable to connect to MQTT broker on %s:%i.\n", host, port);
-    exit(1);
+    return -2;
   }
 
   int loop = mosquitto_loop_start(mosq);
   if (loop != MOSQ_ERR_SUCCESS) {
     fprintf(stderr, "Unable to start loop: %i\n", loop);
-    exit(1);
+    return -3;
   }
 
   fprintf(stderr, "Connected to MQTT broker on %s:%i...\n", host, port);
+  return 0;
 }
 
 int mqtt_send(char *topic, char *msg, bool retain) {
@@ -158,6 +167,33 @@ int mqtt_send(char *topic, char *msg, bool retain) {
 int send_values(struct dsmr_data_struct *data) {
 
   char *msg = malloc(64);
+  
+  /* Calculate total energy consumption for today */
+  double e_in_today;
+  double e_out_today;
+  struct tm *last_time;
+  struct tm *current_time;
+  
+  last_time = localtime( &last_timestamp );
+  current_time = localtime( &data->timestamp );
+
+  if (last_time->tm_yday != current_time->tm_yday) {
+    last_timestamp = data->timestamp;
+    e_in_midnight = (data->E_in[1] + data->E_in[2]);
+    e_out_midnight = (data->E_out[1] + data->E_out[2]);
+  }
+  
+  // Only calculate if we have the meter readings from midnight
+  if (e_in_midnight != 0 || e_out_midnight != 0) {
+    e_in_today = (data->E_in[1] + data->E_in[2]) - e_in_midnight;
+    e_out_today = (data->E_out[1] + data->E_out[2]) - e_out_midnight;
+
+    /* in kWh */
+    sprintf(msg, "%.3f", e_in_today);
+    mqtt_send(DSMR_E_IN_TODAY, msg, 0);
+    sprintf(msg, "%.3f", e_out_today);
+    mqtt_send(DSMR_E_OUT_TODAY, msg, 0);
+  }
 
   /* Current timestamp */
   sprintf(msg, "%i", data->timestamp);
@@ -209,8 +245,8 @@ int send_values(struct dsmr_data_struct *data) {
     sprintf(msg, "%.3f", data->dev_counter[0]);
     mqtt_send(DSMR_DEV_COUNTER, msg, 1);
     
-    // Debiet is ((now gas - previous gas) / 60*60 (sec/hour) * (now timestamp - last timestamp))
-    double debiet = ((data->dev_counter[0] - last_gas_count) / (60*60*(data->dev_counter_timestamp[0] - last_gas_timestamp)));
+    // Debiet is ((now gas - previous gas) * 60*60 (sec/hour) / (now timestamp - last timestamp))
+    double debiet = (((data->dev_counter[0] - last_gas_count) * 60*60) / (data->dev_counter_timestamp[0] - last_gas_timestamp));
     sprintf(msg, "%.3f", debiet);
     mqtt_send(DSMR_DEV_COUNTER_RATE, msg, 1);
     
@@ -237,10 +273,13 @@ int main(int argc, char **argv) {
   parse_arguments(argc, argv);
 
   // setup mqtt connection
-  mqtt_setup(config.mqtt_broker_host, config.mqtt_broker_port);
+  if (mqtt_setup(config.mqtt_broker_host, config.mqtt_broker_port) != 0)
+    goto cleanup_mqtt;
 
   telegram_parser parser;
-  telegram_parser_open(&parser, config.serial_device, 0, 0, NULL);
+  if (telegram_parser_open(&parser, config.serial_device, 0, 0, NULL) != 0)
+    goto cleanup_parser;
+    
   telegram_parser_read(&parser);
 
   struct dsmr_data_struct *data = parser.data;
@@ -254,18 +293,15 @@ int main(int argc, char **argv) {
     // Send values to MQTT broker
     send_values(data);
 
-    // Call Mosquitto
-    // err = mosquitto_loop(mosq, -1, 1);
-    // fprintf(stderr, "MQTT loop return %i\n", err);
-
   } while (parser.terminal && keepRunning); // If we're connected to a 
                                             // serial device, keep 
                                             // reading, otherwise exit
 
-  telegram_parser_close(&parser);
-
-  mosquitto_destroy(mosq);
-  mosquitto_lib_cleanup();
+  cleanup_parser:
+    telegram_parser_close(&parser);
+  cleanup_mqtt:
+    mosquitto_destroy(mosq);
+    mosquitto_lib_cleanup();
 
   return 0;
 }
