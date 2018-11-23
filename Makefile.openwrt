@@ -1,14 +1,14 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=dsmr2mqtt
-PKG_VERSION:=0.1
+PKG_VERSION:=0.2
 PKG_RELEASE:=1
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/dsmr2mqtt-$(PKG_VERSION)
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/terual/dsmr2mqtt.git
-PKG_SOURCE_VERSION:=79f5ad74ad2af9f1da58fb87cab5bf725afb08c8
-PKG_SOURCE_DATE:=2018-11-11
+PKG_SOURCE_VERSION:=26f234e2a0f4bc09e649cefd4fb9fedad35a4e63
+PKG_SOURCE_DATE:=2018-11-23
 
 include $(INCLUDE_DIR)/package.mk
 
